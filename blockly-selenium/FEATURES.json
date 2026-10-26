@@ -1,0 +1,3627 @@
+{
+  "$schema_note": "Spec for recreating 'Blockly Selenium' (in-app name: Block Bots) from scratch in a new repository. Everything needed is here: architecture, every block with its fields, the UI, the WebSocket protocol, server-mode security, deployment and acceptance tests. The block catalog was generated from the real code.",
+  "project": {
+    "name": "Blockly Selenium",
+    "app_name": "Block Bots",
+    "summary": "A kid-friendly, Scratch-style block editor (custom-built, NOT the Blockly library) for building Selenium browser tests and web-scraping robots. Kids snap colourful blocks together, press Run, and a real browser works through the blocks while each block lights up, plays a note, and gets a tick or a plain-English error.",
+    "audience": "Children and beginners; every message is friendly, short and jargon-free.",
+    "origin": "Rebuilt from an earlier Blockly + Playwright + Flask prototype; that code is not needed."
+  },
+  "tech_stack": {
+    "frontend": "Plain HTML/CSS/JavaScript ES modules, no framework, no build step. Google Font 'Fredoka'. Web Audio API for all sounds.",
+    "backend": "Python 3.12+, FastAPI, uvicorn[standard] (WebSockets), Selenium 4 (Selenium Manager for local drivers), openpyxl (Excel).",
+    "requirements.txt": [
+      "fastapi>=0.115",
+      "uvicorn[standard]>=0.30",
+      "selenium>=4.20",
+      "openpyxl>=3.1"
+    ],
+    "browser": "Local: Chrome / Edge / Firefox (visible or headless). Server: headless Chromium + chromium-driver from Debian."
+  },
+  "repository_layout": {
+    "server.py": "FastAPI app: serves the editor and playground, saved-tests API (local only), /ws/ping and /ws/run WebSockets, run limits.",
+    "runner.py": "Run class (browser lifecycle, variables, output, live frames, address guard) + one function per block registered with @block('type').",
+    "requirements.txt": "Python dependencies.",
+    "Dockerfile": "Hosted runner image (server mode).",
+    ".dockerignore": ".venv/, __pycache__/, screenshots/, scraped/, tests/",
+    "static/index.html": "Editor page.",
+    "static/css/style.css": "All editor styles.",
+    "static/js/blocks.js": "Block catalog (CATEGORIES, LIST of block definitions, field helpers, newBlock, cloneBlock).",
+    "static/js/editor.js": "Workspace: rendering, palette, drag & drop, snapping, variables, run highlights, undo, context menu, zoom.",
+    "static/js/app.js": "Toolbar, run over WebSocket, robot mascot, diary, live browser window, variables box, save/load/export, examples, runner status.",
+    "static/js/sound.js": "Synthesised sound effects.",
+    "static/js/confetti.js": "Canvas confetti burst.",
+    "static/examples/index.json + *.json": "Built-in example tests shown by the Examples button.",
+    "static/playground/": "Practice website (index.html, frame.html, robot.svg, prices.csv) served by the runner at /playground.",
+    "tests/": "Saved tests (local mode only).",
+    "screenshots/, scraped/": "Local-mode outputs (git-ignored)."
+  },
+  "run_modes": {
+    "local": {
+      "start": "python server.py [--port 8000] [--host 127.0.0.1] [--no-browser]",
+      "behaviour": "Opens the editor at http://localhost:8000 in the default browser. Tests drive a real, visible browser window on this computer. Tests can be saved on disk (Save/Open), files are written to scraped/ or a chosen folder."
+    },
+    "server": {
+      "start": "BLOCKBOTS_SERVER=1 python server.py --host 0.0.0.0 --port 8000 (the Dockerfile does this)",
+      "behaviour": "For hosting on a public website: headless Chromium, live browser-window frames, nothing written to disk, saved-tests API and /shots /scraped mounts disabled, address guard, run limits.",
+      "env": {
+        "BLOCKBOTS_SERVER": "'1' enables server mode",
+        "BLOCKBOTS_MAX_RUNS": "max simultaneous runs (default 2); extra runs wait with a log message",
+        "BLOCKBOTS_MAX_SECONDS": "max seconds per run (default 300)",
+        "BLOCKBOTS_ORIGINS": "regex of allowed page Origins for the WebSockets (default: localhost/127.0.0.1 any port, https://(www.)becomeaiengg.com)",
+        "CHROME_BIN": "/usr/bin/chromium in Docker",
+        "CHROMEDRIVER": "/usr/bin/chromedriver in Docker"
+      }
+    },
+    "hosted_editor": "The editor detects 'hosted' mode when opened with ?runner=<url-or-path> (e.g. ?runner=/blockly-runner behind a reverse proxy) OR when /ws/ping replies server:true. Hosted mode hides Save/Open and 'keep browser open', always shows the live browser window, keeps tests in localStorage, and shows a '🔴 robot offline' chip only when the runner doesn't answer (pinged on load and every 30 s)."
+  },
+  "ui": {
+    "look_and_feel": "Bright, rounded, playful. Light lavender background (#F4F1FF), dotted-grid canvas, purple→blue→teal gradient top bar, chunky blocks with inset bottom shadow, bouncy pop/shake animations, prefers-reduced-motion respected.",
+    "layout": "Top bar (66px) + 4-column grid: category rail (84px) | palette with search (330px) | canvas (1fr) | side panel (300px). Below 1280px columns shrink; below 960px the side panel hides.",
+    "top_bar": [
+      "Logo 🤖 'BlockBots' + editable test name",
+      "✨ New (fresh workspace with a Start block; undoable)",
+      "🧪 Examples (dialog listing static/examples/index.json)",
+      "📂 Open / 💾 Save (local mode only; server-side tests/)",
+      "📤 Export / 📥 Import JSON file",
+      "↶ Undo",
+      "Speed slider 🐢 🐌 🐇 🐆 🚀 = pause between steps 1.5 / 0.8 / 0.4 / 0.15 / 0 s",
+      "'keep browser open' toggle (local only)",
+      "🔊/🔇 mute",
+      "'🔴 robot offline' chip (hosted only, when the runner is unreachable)",
+      "■ Stop (visible while running) and big green ▶ Run"
+    ],
+    "palette": [
+      "Category rail: coloured circle icon + name per category; click scrolls the palette; active category highlights while scrolling",
+      "Search box filters blocks by label/type/category",
+      "Each category section lists its blocks rendered exactly as they look on the canvas (inputs not editable in the palette)",
+      "Variables section starts with a dashed '📦 box': '➕ Make a variable' button and one draggable chip per variable (chip has × to delete; refused with a message if the variable is still used)"
+    ],
+    "blocks_rendering": {
+      "stack": "Rounded rectangle, label text and inline fields in a wrapping row; puzzle tab at the bottom (CSS ::after) and notch at the top",
+      "hat": "The Start block: rounded top, 🚀 icon, no top notch; only allowed at the top of a stack",
+      "c": "C-shaped container (repeat, if…, for each, repeat until): head row, left arm, inner stack (min height), foot",
+      "fields": {
+        "text": "White pill input, auto-width (CSS field-sizing:content, JS fallback)",
+        "number": "Small white rounded input",
+        "select": "Darker pill dropdown in the category's dark colour",
+        "var": "Dropdown of the workspace variables (📦 name) plus '➕ new variable…' (prompts for a name)",
+        "file": "White pill button '📁 choose a file' / '📄 filename'; accepts .csv .tsv .xlsx .xlsm .json .txt up to 3 MB; stored as {name, data(base64)}",
+        "variable_pill": "When a text/number field's whole value is '{name}', it renders as an orange pill '📦 name ×' instead of an input"
+      },
+      "loose_stacks": "Stacks not starting with Start are faded and get a tooltip; only Start stacks run",
+      "unknown_block": "Grey block 'unknown block \"type\"' so old files still load"
+    },
+    "canvas_interactions": [
+      "Drag from palette creates a block; drag a block on the canvas takes it AND every block below it",
+      "Snapping: nearest attach point within 70px horizontally / 40px vertically (scaled by zoom): after any block, top of a C-mouth, or above the first block of a stack (hat-less stacks only). A glowing bar in the dragged block's colour shows the snap spot",
+      "Drop on the palette or the 🗑️ trash (bottom-right) deletes with a 'poof' particle effect",
+      "Drop on empty canvas creates a new stack",
+      "Right-click block: Duplicate (block + children, offset 30px) / Delete block (only that block; the rest closes the gap). Right-click canvas: Clean up / Undo",
+      "Zoom − ⦿ + (0.6–1.5) and 🧹 Clean up (stacks in a column) at the canvas bottom-right",
+      "Undo history of 60 snapshots (Ctrl+Z)",
+      "Canvas locked (no drag/edit) while a test runs",
+      "Variable drag: drag a palette chip or an existing pill onto any white text/number box on the canvas (target box gets an orange outline); dropping replaces the box with the pill; dragging a pill elsewhere moves it; dropping a pill on nothing removes it; × on a pill clears the box",
+      "Variables auto-appear: any variable named in a var field or used as {name} in a field is added to the variables list"
+    ],
+    "run_feedback": [
+      "Current block: yellow outline + gentle pulse + bump, scrolled into view",
+      "Passed block: green outline + green ✓ badge (top-right), and a rising pentatonic note per passed step",
+      "Failed block: red outline, shake, red ✗ badge and a speech bubble to the right with the plain-English reason",
+      "Stopped block: dashed grey outline",
+      "All passed: fanfare + confetti + happy robot; failure: 'wah-wah' + sad robot"
+    ],
+    "side_panel": {
+      "robot": "Inline-SVG robot 'Bolt' with blinking eyes, antenna colour and mouth by mood (idle, thinking=blue blinking, happy=green + hop, sad=red + shake) and a speech bubble",
+      "live_browser_window": "Mini Chrome window: title bar with red/yellow/green dots, address bar showing the robot's current URL (title as tooltip), ⤢ button / click to enlarge to a centred modal (✕ to shrink). Shows JPEG frames from the runner; placeholder text before the first run. Always visible when hosted; locally only when the browser is hidden. Yellow glow while running",
+      "variables_box": "'📦 Variables' list: every variable name with its live value ('not set yet' before), lists as 'list · N: a, b, c…', tables as 'table · N rows'; a row flashes when its value changes",
+      "diary": "'📒 Test diary' log with icons: 🏁 start, 💡 info, ✅ step text, 🤖 say messages, ❌ failures, 📸 screenshots (thumbnail, click to save), 🕸️ scraped-data cards (name, size, preview list/table/text, ⬇ CSV button), 💾 saved/downloaded files, 📦 'Download all (JSON)' of scraped data at the end, 🏆 result. 🧽 clears it"
+    },
+    "sounds": "All synthesised (no files): click, pick-up, hover/snap-target tick, snap, drop, trash whoosh, start arpeggio, step notes on a C-major pentatonic scale, win fanfare, fail wah-wah, oops. Mute state saved in localStorage",
+    "persistence": "Workspace autosaves to localStorage key 'blockbots.workspace' as {name, scripts, variables}. Speed, keep-open and mute are remembered. First visit loads the Playground Demo example",
+    "keyboard": {
+      "Ctrl+Enter": "Run",
+      "Esc": "Stop",
+      "Ctrl+Z": "Undo",
+      "Ctrl+S": "Save (hosted: toast that it autosaves)"
+    },
+    "dialogs": "Open/Examples share one modal list; toast notifications slide up from the bottom"
+  },
+  "workspace_model": {
+    "test_file": {
+      "name": "string",
+      "variables": [
+        "variable names"
+      ],
+      "scripts": [
+        {
+          "id": "string",
+          "x": "px",
+          "y": "px",
+          "blocks": [
+            "block"
+          ]
+        }
+      ]
+    },
+    "block": {
+      "id": "random string",
+      "type": "block type",
+      "fields": {
+        "<field name>": "string | {name,data} for file fields"
+      },
+      "children": "[block] (C-shaped blocks only)"
+    },
+    "variable_reference": "A field value '{name}' (whole value) is shown as a pill; '{name}' inside longer text is replaced too. Variable names are sanitized to [A-Za-z0-9_]."
+  },
+  "categories": [
+    {
+      "id": "start",
+      "name": "Start",
+      "icon": "🚀",
+      "color": "#FFB703",
+      "dark": "#D99A00",
+      "text": "#4A3200"
+    },
+    {
+      "id": "browser",
+      "name": "Browser",
+      "icon": "🌐",
+      "color": "#3A86FF",
+      "dark": "#2366D1"
+    },
+    {
+      "id": "actions",
+      "name": "Actions",
+      "icon": "👆",
+      "color": "#FF4FA3",
+      "dark": "#D93485"
+    },
+    {
+      "id": "wait",
+      "name": "Wait",
+      "icon": "⏳",
+      "color": "#00BFA6",
+      "dark": "#009683"
+    },
+    {
+      "id": "check",
+      "name": "Check",
+      "icon": "✅",
+      "color": "#3DBE52",
+      "dark": "#2A9A3D"
+    },
+    {
+      "id": "vars",
+      "name": "Variables",
+      "icon": "📦",
+      "color": "#FF6B2C",
+      "dark": "#DB4E12"
+    },
+    {
+      "id": "scrape",
+      "name": "Scrape",
+      "icon": "🕸️",
+      "color": "#F2668B",
+      "dark": "#D1456C"
+    },
+    {
+      "id": "files",
+      "name": "Files",
+      "icon": "💾",
+      "color": "#5B6CF0",
+      "dark": "#3F4FD1"
+    },
+    {
+      "id": "popups",
+      "name": "Popups",
+      "icon": "🪟",
+      "color": "#8B5CF6",
+      "dark": "#6D3FDB"
+    },
+    {
+      "id": "control",
+      "name": "Control",
+      "icon": "🔁",
+      "color": "#FFAB19",
+      "dark": "#DB8C00",
+      "text": "#4A3200"
+    }
+  ],
+  "locators": [
+    {
+      "label": "css",
+      "value": "css"
+    },
+    {
+      "label": "xpath",
+      "value": "xpath"
+    },
+    {
+      "label": "id",
+      "value": "id"
+    },
+    {
+      "label": "name",
+      "value": "name"
+    },
+    {
+      "label": "link text",
+      "value": "link"
+    },
+    {
+      "label": "part of link",
+      "value": "partial"
+    },
+    {
+      "label": "class",
+      "value": "class"
+    },
+    {
+      "label": "tag",
+      "value": "tag"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "start",
+      "category": "start",
+      "shape": "hat",
+      "label": "when ▶ Run is clicked",
+      "fields": [],
+      "description": "Every test starts here. Snap blocks underneath!"
+    },
+    {
+      "type": "open_browser",
+      "category": "browser",
+      "shape": "stack",
+      "label": "open [browser] browser [mode]",
+      "fields": [
+        {
+          "name": "browser",
+          "kind": "select",
+          "default": "chrome",
+          "options": [
+            {
+              "label": "Chrome",
+              "value": "chrome"
+            },
+            {
+              "label": "Edge",
+              "value": "edge"
+            },
+            {
+              "label": "Firefox",
+              "value": "firefox"
+            }
+          ]
+        },
+        {
+          "name": "mode",
+          "kind": "select",
+          "default": "visible",
+          "options": [
+            {
+              "label": "👀 so I can watch",
+              "value": "visible"
+            },
+            {
+              "label": "🙈 hidden",
+              "value": "hidden"
+            }
+          ]
+        }
+      ],
+      "description": "Starts a real web browser",
+      "notes": "Server mode: always headless Chromium (browser/mode fields ignored)."
+    },
+    {
+      "type": "go_to",
+      "category": "browser",
+      "shape": "stack",
+      "label": "go to [url]",
+      "fields": [
+        {
+          "name": "url",
+          "kind": "text",
+          "default": "http://localhost:8000/playground"
+        }
+      ],
+      "description": "Opens a web page",
+      "notes": "Server mode: URL must pass the address guard (public http/https only, plus the runner's own /playground)."
+    },
+    {
+      "type": "back",
+      "category": "browser",
+      "shape": "stack",
+      "label": "go back ⬅️",
+      "fields": [],
+      "description": "Like the browser back button"
+    },
+    {
+      "type": "forward",
+      "category": "browser",
+      "shape": "stack",
+      "label": "go forward ➡️",
+      "fields": [],
+      "description": "Like the browser forward button"
+    },
+    {
+      "type": "refresh",
+      "category": "browser",
+      "shape": "stack",
+      "label": "refresh the page 🔄",
+      "fields": [],
+      "description": "Reloads the page"
+    },
+    {
+      "type": "maximize",
+      "category": "browser",
+      "shape": "stack",
+      "label": "make the window big ⛶",
+      "fields": [],
+      "description": "Maximizes the window"
+    },
+    {
+      "type": "window_size",
+      "category": "browser",
+      "shape": "stack",
+      "label": "set window size [width] × [height]",
+      "fields": [
+        {
+          "name": "width",
+          "kind": "number",
+          "default": "1280"
+        },
+        {
+          "name": "height",
+          "kind": "number",
+          "default": "800"
+        }
+      ],
+      "description": "Resizes the window in pixels"
+    },
+    {
+      "type": "new_tab",
+      "category": "browser",
+      "shape": "stack",
+      "label": "open a new tab at [url]",
+      "fields": [
+        {
+          "name": "url",
+          "kind": "text",
+          "default": "example.com"
+        }
+      ],
+      "description": "Opens and switches to a new tab",
+      "notes": "Server mode: URL must pass the address guard."
+    },
+    {
+      "type": "switch_tab",
+      "category": "browser",
+      "shape": "stack",
+      "label": "switch to tab # [index]",
+      "fields": [
+        {
+          "name": "index",
+          "kind": "number",
+          "default": "1"
+        }
+      ],
+      "description": "Tab #1 is the first tab"
+    },
+    {
+      "type": "close_tab",
+      "category": "browser",
+      "shape": "stack",
+      "label": "close this tab",
+      "fields": [],
+      "description": "Closes the current tab"
+    },
+    {
+      "type": "screenshot",
+      "category": "browser",
+      "shape": "stack",
+      "label": "take a picture 📸 named [name]",
+      "fields": [
+        {
+          "name": "name",
+          "kind": "text",
+          "default": "my-page"
+        }
+      ],
+      "description": "Saves a screenshot — it shows up in the diary",
+      "notes": "Local: saved to screenshots/ and shown in the diary via /shots/<file>. Server: sent as a data URL, nothing written."
+    },
+    {
+      "type": "delete_cookies",
+      "category": "browser",
+      "shape": "stack",
+      "label": "delete all cookies 🍪",
+      "fields": [],
+      "description": "Forgets logins and saved site data"
+    },
+    {
+      "type": "close_browser",
+      "category": "browser",
+      "shape": "stack",
+      "label": "close the browser 👋",
+      "fields": [],
+      "description": "Closes the browser completely"
+    },
+    {
+      "type": "click",
+      "category": "actions",
+      "shape": "stack",
+      "label": "click [by] [target]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#hello-btn"
+        }
+      ],
+      "description": "Clicks a button, link or anything else"
+    },
+    {
+      "type": "double_click",
+      "category": "actions",
+      "shape": "stack",
+      "label": "double-click [by] [target]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#double-box"
+        }
+      ],
+      "description": "Clicks twice, fast"
+    },
+    {
+      "type": "right_click",
+      "category": "actions",
+      "shape": "stack",
+      "label": "right-click [by] [target]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#right-box"
+        }
+      ],
+      "description": "Opens the right-click menu"
+    },
+    {
+      "type": "hover",
+      "category": "actions",
+      "shape": "stack",
+      "label": "hover over [by] [target]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#hover-box"
+        }
+      ],
+      "description": "Moves the mouse on top of something"
+    },
+    {
+      "type": "type_text",
+      "category": "actions",
+      "shape": "stack",
+      "label": "type [text] into [by] [target]",
+      "fields": [
+        {
+          "name": "text",
+          "kind": "text",
+          "default": "Ada"
+        },
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#name"
+        }
+      ],
+      "description": "Types letters into a text box"
+    },
+    {
+      "type": "clear_field",
+      "category": "actions",
+      "shape": "stack",
+      "label": "clear [by] [target]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#name"
+        }
+      ],
+      "description": "Empties a text box"
+    },
+    {
+      "type": "press_key",
+      "category": "actions",
+      "shape": "stack",
+      "label": "press [key] on [by] [target]",
+      "fields": [
+        {
+          "name": "key",
+          "kind": "select",
+          "default": "enter",
+          "options": [
+            {
+              "label": "ENTER ⏎",
+              "value": "enter"
+            },
+            {
+              "label": "TAB ⇥",
+              "value": "tab"
+            },
+            {
+              "label": "ESC",
+              "value": "escape"
+            },
+            {
+              "label": "SPACE",
+              "value": "space"
+            },
+            {
+              "label": "BACKSPACE ⌫",
+              "value": "backspace"
+            },
+            {
+              "label": "DELETE",
+              "value": "delete"
+            },
+            {
+              "label": "↑",
+              "value": "up"
+            },
+            {
+              "label": "↓",
+              "value": "down"
+            },
+            {
+              "label": "←",
+              "value": "left"
+            },
+            {
+              "label": "→",
+              "value": "right"
+            },
+            {
+              "label": "HOME",
+              "value": "home"
+            },
+            {
+              "label": "END",
+              "value": "end"
+            },
+            {
+              "label": "PAGE UP",
+              "value": "pageup"
+            },
+            {
+              "label": "PAGE DOWN",
+              "value": "pagedown"
+            }
+          ]
+        },
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#name"
+        }
+      ],
+      "description": "Presses a keyboard key (leave the box empty to press it on the page)"
+    },
+    {
+      "type": "select_text",
+      "category": "actions",
+      "shape": "stack",
+      "label": "choose [option] from dropdown [by] [target]",
+      "fields": [
+        {
+          "name": "option",
+          "kind": "text",
+          "default": "Dragon"
+        },
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#pet"
+        }
+      ],
+      "description": "Picks a dropdown option by the words you see"
+    },
+    {
+      "type": "select_value",
+      "category": "actions",
+      "shape": "stack",
+      "label": "choose value [value] from dropdown [by] [target]",
+      "fields": [
+        {
+          "name": "value",
+          "kind": "text",
+          "default": "dog"
+        },
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#pet"
+        }
+      ],
+      "description": "Picks a dropdown option by its hidden value"
+    },
+    {
+      "type": "set_checkbox",
+      "category": "actions",
+      "shape": "stack",
+      "label": "[state] checkbox [by] [target]",
+      "fields": [
+        {
+          "name": "state",
+          "kind": "select",
+          "default": "on",
+          "options": [
+            {
+              "label": "tick ☑",
+              "value": "on"
+            },
+            {
+              "label": "untick ☐",
+              "value": "off"
+            }
+          ]
+        },
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#pizza"
+        }
+      ],
+      "description": "Ticks or unticks a checkbox"
+    },
+    {
+      "type": "drag_drop",
+      "category": "actions",
+      "shape": "stack",
+      "label": "drag [by] [target] onto [to_by] [to_target]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#star"
+        },
+        {
+          "name": "to_by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "to_target",
+          "kind": "text",
+          "default": "#basket"
+        }
+      ],
+      "description": "Drags one thing and drops it on another"
+    },
+    {
+      "type": "scroll_to",
+      "category": "actions",
+      "shape": "stack",
+      "label": "scroll to [by] [target]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#scores"
+        }
+      ],
+      "description": "Scrolls until the element is on screen"
+    },
+    {
+      "type": "scroll_by",
+      "category": "actions",
+      "shape": "stack",
+      "label": "scroll down by [pixels] pixels",
+      "fields": [
+        {
+          "name": "pixels",
+          "kind": "number",
+          "default": "400"
+        }
+      ],
+      "description": "Use a minus number to scroll up"
+    },
+    {
+      "type": "upload_file",
+      "category": "actions",
+      "shape": "stack",
+      "label": "upload file [path] into [by] [target]",
+      "fields": [
+        {
+          "name": "path",
+          "kind": "text",
+          "default": "C:\\Users\\me\\picture.png"
+        },
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#file"
+        }
+      ],
+      "description": "Picks a file from this computer",
+      "notes": "Server mode: refused (would read files from the server)."
+    },
+    {
+      "type": "submit_form",
+      "category": "actions",
+      "shape": "stack",
+      "label": "submit form [by] [target]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#signup"
+        }
+      ],
+      "description": "Sends a form, like pressing its Submit button"
+    },
+    {
+      "type": "run_js",
+      "category": "actions",
+      "shape": "stack",
+      "label": "run JavaScript [code]",
+      "fields": [
+        {
+          "name": "code",
+          "kind": "text",
+          "default": "return document.title"
+        }
+      ],
+      "description": "For grown-ups: runs code inside the page"
+    },
+    {
+      "type": "wait_seconds",
+      "category": "wait",
+      "shape": "stack",
+      "label": "wait [seconds] seconds",
+      "fields": [
+        {
+          "name": "seconds",
+          "kind": "number",
+          "default": "1"
+        }
+      ],
+      "description": "Takes a little break"
+    },
+    {
+      "type": "wait_visible",
+      "category": "wait",
+      "shape": "stack",
+      "label": "wait until [by] [target] shows up · max [seconds] s",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#secret"
+        },
+        {
+          "name": "seconds",
+          "kind": "number",
+          "default": "10"
+        }
+      ],
+      "description": "Waits for something to appear"
+    },
+    {
+      "type": "wait_clickable",
+      "category": "wait",
+      "shape": "stack",
+      "label": "wait until [by] [target] can be clicked · max [seconds] s",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#hello-btn"
+        },
+        {
+          "name": "seconds",
+          "kind": "number",
+          "default": "10"
+        }
+      ],
+      "description": "Waits until a button is ready"
+    },
+    {
+      "type": "wait_gone",
+      "category": "wait",
+      "shape": "stack",
+      "label": "wait until [by] [target] disappears · max [seconds] s",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#loading"
+        },
+        {
+          "name": "seconds",
+          "kind": "number",
+          "default": "10"
+        }
+      ],
+      "description": "Waits for something to go away"
+    },
+    {
+      "type": "wait_title",
+      "category": "wait",
+      "shape": "stack",
+      "label": "wait until the title has [text]",
+      "fields": [
+        {
+          "name": "text",
+          "kind": "text",
+          "default": "Playground"
+        }
+      ],
+      "description": "Waits for the tab title to change"
+    },
+    {
+      "type": "wait_text",
+      "category": "wait",
+      "shape": "stack",
+      "label": "wait until [by] [target] says [text]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#greeting"
+        },
+        {
+          "name": "text",
+          "kind": "text",
+          "default": "Hello"
+        }
+      ],
+      "description": "Waits for some words to appear"
+    },
+    {
+      "type": "check_title",
+      "category": "check",
+      "shape": "stack",
+      "label": "check the title [mode] [text]",
+      "fields": [
+        {
+          "name": "mode",
+          "kind": "select",
+          "default": "contains",
+          "options": [
+            {
+              "label": "is",
+              "value": "is"
+            },
+            {
+              "label": "contains",
+              "value": "contains"
+            },
+            {
+              "label": "is not",
+              "value": "not"
+            }
+          ]
+        },
+        {
+          "name": "text",
+          "kind": "text",
+          "default": "Playground"
+        }
+      ],
+      "description": "Checks the words on the browser tab"
+    },
+    {
+      "type": "check_url",
+      "category": "check",
+      "shape": "stack",
+      "label": "check the web address [mode] [text]",
+      "fields": [
+        {
+          "name": "mode",
+          "kind": "select",
+          "default": "contains",
+          "options": [
+            {
+              "label": "contains",
+              "value": "contains"
+            },
+            {
+              "label": "is",
+              "value": "is"
+            },
+            {
+              "label": "is not",
+              "value": "not"
+            }
+          ]
+        },
+        {
+          "name": "text",
+          "kind": "text",
+          "default": "playground"
+        }
+      ],
+      "description": "Checks the address bar"
+    },
+    {
+      "type": "check_text",
+      "category": "check",
+      "shape": "stack",
+      "label": "check text of [by] [target] [mode] [text]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#greeting"
+        },
+        {
+          "name": "mode",
+          "kind": "select",
+          "default": "contains",
+          "options": [
+            {
+              "label": "is",
+              "value": "is"
+            },
+            {
+              "label": "contains",
+              "value": "contains"
+            },
+            {
+              "label": "is not",
+              "value": "not"
+            }
+          ]
+        },
+        {
+          "name": "text",
+          "kind": "text",
+          "default": "Ada"
+        }
+      ],
+      "description": "Checks what something says"
+    },
+    {
+      "type": "check_visible",
+      "category": "check",
+      "shape": "stack",
+      "label": "check [by] [target] is visible 👀",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#greeting"
+        }
+      ],
+      "description": "Checks you can see it"
+    },
+    {
+      "type": "check_hidden",
+      "category": "check",
+      "shape": "stack",
+      "label": "check [by] [target] is hidden 🙈",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#secret"
+        }
+      ],
+      "description": "Checks you can NOT see it"
+    },
+    {
+      "type": "check_enabled",
+      "category": "check",
+      "shape": "stack",
+      "label": "check [by] [target] is enabled",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#hello-btn"
+        }
+      ],
+      "description": "Checks it is not greyed out"
+    },
+    {
+      "type": "check_selected",
+      "category": "check",
+      "shape": "stack",
+      "label": "check [by] [target] is ticked ☑",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#pizza"
+        }
+      ],
+      "description": "Checks a checkbox or option is chosen"
+    },
+    {
+      "type": "check_attribute",
+      "category": "check",
+      "shape": "stack",
+      "label": "check [by] [target] has [attr] = [value]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#name"
+        },
+        {
+          "name": "attr",
+          "kind": "text",
+          "default": "placeholder"
+        },
+        {
+          "name": "value",
+          "kind": "text",
+          "default": "Your name"
+        }
+      ],
+      "description": "Checks a hidden HTML attribute"
+    },
+    {
+      "type": "check_count",
+      "category": "check",
+      "shape": "stack",
+      "label": "check there are [count] of [by] [target]",
+      "fields": [
+        {
+          "name": "count",
+          "kind": "number",
+          "default": "3"
+        },
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#scores tbody tr"
+        }
+      ],
+      "description": "Counts how many match"
+    },
+    {
+      "type": "check_value",
+      "category": "check",
+      "shape": "stack",
+      "label": "check text box [by] [target] holds [value]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#name"
+        },
+        {
+          "name": "value",
+          "kind": "text",
+          "default": "Ada"
+        }
+      ],
+      "description": "Checks what is typed inside a text box"
+    },
+    {
+      "type": "set_var",
+      "category": "vars",
+      "shape": "stack",
+      "label": "set [name] to [value]",
+      "fields": [
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "my_variable"
+        },
+        {
+          "name": "value",
+          "kind": "text",
+          "default": "0"
+        }
+      ],
+      "description": "Puts a value in a variable"
+    },
+    {
+      "type": "change_var",
+      "category": "vars",
+      "shape": "stack",
+      "label": "change [name] by [by]",
+      "fields": [
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "my_variable"
+        },
+        {
+          "name": "by",
+          "kind": "number",
+          "default": "1"
+        }
+      ],
+      "description": "Adds to a number variable (use -1 to count down)"
+    },
+    {
+      "type": "math_var",
+      "category": "vars",
+      "shape": "stack",
+      "label": "set [name] to [a] [op] [b]",
+      "fields": [
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "my_variable"
+        },
+        {
+          "name": "a",
+          "kind": "text",
+          "default": "2"
+        },
+        {
+          "name": "op",
+          "kind": "select",
+          "default": "+",
+          "options": [
+            {
+              "label": "+",
+              "value": "+"
+            },
+            {
+              "label": "−",
+              "value": "-"
+            },
+            {
+              "label": "×",
+              "value": "*"
+            },
+            {
+              "label": "÷",
+              "value": "/"
+            },
+            {
+              "label": "remainder",
+              "value": "%"
+            }
+          ]
+        },
+        {
+          "name": "b",
+          "kind": "text",
+          "default": "3"
+        }
+      ],
+      "description": "Does maths and keeps the answer"
+    },
+    {
+      "type": "join_var",
+      "category": "vars",
+      "shape": "stack",
+      "label": "set [name] to [a] joined with [b]",
+      "fields": [
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "my_variable"
+        },
+        {
+          "name": "a",
+          "kind": "text",
+          "default": "Hello "
+        },
+        {
+          "name": "b",
+          "kind": "text",
+          "default": "world"
+        }
+      ],
+      "description": "Sticks two pieces of text together"
+    },
+    {
+      "type": "random_var",
+      "category": "vars",
+      "shape": "stack",
+      "label": "set [name] to a random number from [from] to [to]",
+      "fields": [
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "my_variable"
+        },
+        {
+          "name": "from",
+          "kind": "number",
+          "default": "1"
+        },
+        {
+          "name": "to",
+          "kind": "number",
+          "default": "10"
+        }
+      ],
+      "description": "Picks a surprise number"
+    },
+    {
+      "type": "date_var",
+      "category": "vars",
+      "shape": "stack",
+      "label": "set [name] to [what]",
+      "fields": [
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "today"
+        },
+        {
+          "name": "what",
+          "kind": "select",
+          "default": "date",
+          "options": [
+            {
+              "label": "today's date",
+              "value": "date"
+            },
+            {
+              "label": "the time now",
+              "value": "time"
+            },
+            {
+              "label": "date and time",
+              "value": "datetime"
+            },
+            {
+              "label": "a timestamp",
+              "value": "stamp"
+            }
+          ]
+        }
+      ],
+      "description": "Remembers the date or time"
+    },
+    {
+      "type": "list_add",
+      "category": "vars",
+      "shape": "stack",
+      "label": "add [value] to list [name]",
+      "fields": [
+        {
+          "name": "value",
+          "kind": "text",
+          "default": "thing"
+        },
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "my_list"
+        }
+      ],
+      "description": "Puts one more item at the end of a list"
+    },
+    {
+      "type": "list_clear",
+      "category": "vars",
+      "shape": "stack",
+      "label": "empty the list [name]",
+      "fields": [
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "my_list"
+        }
+      ],
+      "description": "Makes a list empty again"
+    },
+    {
+      "type": "ask_var",
+      "category": "vars",
+      "shape": "stack",
+      "label": "ask [question] and save the answer in [name]",
+      "fields": [
+        {
+          "name": "question",
+          "kind": "text",
+          "default": "What's your name?"
+        },
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "answer"
+        }
+      ],
+      "description": "Asks you a question while the test runs",
+      "notes": "Runner emits {event:'ask', question}; the editor shows a prompt and replies {action:'answer', text}."
+    },
+    {
+      "type": "check_scraped",
+      "category": "vars",
+      "shape": "stack",
+      "label": "check variable [name] [mode] [text]",
+      "fields": [
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "how_many"
+        },
+        {
+          "name": "mode",
+          "kind": "select",
+          "default": "is",
+          "options": [
+            {
+              "label": "is",
+              "value": "is"
+            },
+            {
+              "label": "contains",
+              "value": "contains"
+            },
+            {
+              "label": "is not",
+              "value": "not"
+            },
+            {
+              "label": "is more than",
+              "value": "more"
+            },
+            {
+              "label": "is less than",
+              "value": "less"
+            }
+          ]
+        },
+        {
+          "name": "text",
+          "kind": "text",
+          "default": "4"
+        }
+      ],
+      "description": "Checks a variable. \"more/less than\" compares numbers, even in \"$12.99\"",
+      "notes": "'more'/'less' extract the number from text like '$12.99'; for lists every item must pass."
+    },
+    {
+      "type": "scrape_text",
+      "category": "scrape",
+      "shape": "stack",
+      "label": "grab text of [by] [target] into [name]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": ".product .name"
+        },
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "toy"
+        }
+      ],
+      "description": "Copies the words from one element into a variable"
+    },
+    {
+      "type": "scrape_all",
+      "category": "scrape",
+      "shape": "stack",
+      "label": "grab text of ALL [by] [target] into [name]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": ".product .price"
+        },
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "prices"
+        }
+      ],
+      "description": "Copies the words from every matching element into a list"
+    },
+    {
+      "type": "scrape_attribute",
+      "category": "scrape",
+      "shape": "stack",
+      "label": "grab [attr] of [which] [by] [target] into [name]",
+      "fields": [
+        {
+          "name": "attr",
+          "kind": "text",
+          "default": "href"
+        },
+        {
+          "name": "which",
+          "kind": "select",
+          "default": "first",
+          "options": [
+            {
+              "label": "first",
+              "value": "first"
+            },
+            {
+              "label": "all",
+              "value": "all"
+            }
+          ]
+        },
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": ".product a"
+        },
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "links"
+        }
+      ],
+      "description": "Copies a hidden value like a link (href) or picture address (src)"
+    },
+    {
+      "type": "scrape_table",
+      "category": "scrape",
+      "shape": "stack",
+      "label": "grab table [by] [target] into [name]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#scores"
+        },
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "scores"
+        }
+      ],
+      "description": "Copies a whole table, rows and columns"
+    },
+    {
+      "type": "scrape_links",
+      "category": "scrape",
+      "shape": "stack",
+      "label": "grab every link on the page into [name]",
+      "fields": [
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "all_links"
+        }
+      ],
+      "description": "Collects the text and address of every link"
+    },
+    {
+      "type": "scrape_page",
+      "category": "scrape",
+      "shape": "stack",
+      "label": "grab the page [what] into [name]",
+      "fields": [
+        {
+          "name": "what",
+          "kind": "select",
+          "default": "title",
+          "options": [
+            {
+              "label": "title",
+              "value": "title"
+            },
+            {
+              "label": "web address",
+              "value": "url"
+            },
+            {
+              "label": "words (all text)",
+              "value": "text"
+            }
+          ]
+        },
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "page"
+        }
+      ],
+      "description": "Copies the page title, address or all of its words"
+    },
+    {
+      "type": "scrape_count",
+      "category": "scrape",
+      "shape": "stack",
+      "label": "count [by] [target] into [name]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": ".product"
+        },
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "how_many"
+        }
+      ],
+      "description": "Counts how many elements match"
+    },
+    {
+      "type": "load_file",
+      "category": "files",
+      "shape": "stack",
+      "label": "load file [file] into [name]",
+      "fields": [
+        {
+          "name": "file",
+          "kind": "file"
+        },
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "data"
+        }
+      ],
+      "description": "Reads a CSV, Excel, JSON or text file from your computer into a variable",
+      "notes": "The file is picked in the browser, read as base64 and stored in the block's field as {name, data} (max 3 MB). Runner parses CSV/TSV (utf-8-sig), XLSX (first sheet, openpyxl), JSON, or text (non-empty lines)."
+    },
+    {
+      "type": "save_scraped",
+      "category": "files",
+      "shape": "stack",
+      "label": "save [name] to file [file] as [format]",
+      "fields": [
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "prices"
+        },
+        {
+          "name": "file",
+          "kind": "text",
+          "default": "toy-prices"
+        },
+        {
+          "name": "format",
+          "kind": "select",
+          "default": "xlsx",
+          "options": [
+            {
+              "label": "Excel",
+              "value": "xlsx"
+            },
+            {
+              "label": "CSV",
+              "value": "csv"
+            },
+            {
+              "label": "JSON",
+              "value": "json"
+            },
+            {
+              "label": "text",
+              "value": "txt"
+            }
+          ]
+        }
+      ],
+      "description": "Saves a variable as a file",
+      "notes": "Uses output(): local -> written to the output folder; server -> sent to the browser as a download."
+    },
+    {
+      "type": "save_all",
+      "category": "files",
+      "shape": "stack",
+      "label": "save ALL variables to file [file] as [format]",
+      "fields": [
+        {
+          "name": "file",
+          "kind": "text",
+          "default": "results"
+        },
+        {
+          "name": "format",
+          "kind": "select",
+          "default": "xlsx",
+          "options": [
+            {
+              "label": "Excel",
+              "value": "xlsx"
+            },
+            {
+              "label": "JSON",
+              "value": "json"
+            }
+          ]
+        }
+      ],
+      "description": "One file with every variable (Excel: one sheet per list or table)",
+      "notes": "Uses output()."
+    },
+    {
+      "type": "download_image",
+      "category": "files",
+      "shape": "stack",
+      "label": "download image [by] [target] as [file]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#robot-pic"
+        },
+        {
+          "name": "file",
+          "kind": "text",
+          "default": "picture"
+        }
+      ],
+      "description": "Saves a picture from the page",
+      "notes": "Fetches the <img> currentSrc (data: URLs decoded directly); non-<img> elements fall back to an element screenshot. Uses output(). Server: address guard + 15 MB limit."
+    },
+    {
+      "type": "download_link",
+      "category": "files",
+      "shape": "stack",
+      "label": "download the file linked by [by] [target] as [file]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#price-list"
+        },
+        {
+          "name": "file",
+          "kind": "text",
+          "default": "download"
+        }
+      ],
+      "description": "Saves the file a link points to",
+      "notes": "Fetches the element's href/src. Uses output(). Server: address guard + 15 MB limit."
+    },
+    {
+      "type": "download_url",
+      "category": "files",
+      "shape": "stack",
+      "label": "download [url] as [file]",
+      "fields": [
+        {
+          "name": "url",
+          "kind": "text",
+          "default": "https://www.python.org/static/img/python-logo.png"
+        },
+        {
+          "name": "file",
+          "kind": "text",
+          "default": "download"
+        }
+      ],
+      "description": "Saves any file from a web address",
+      "notes": "Uses output(). Server: address guard + 15 MB limit."
+    },
+    {
+      "type": "element_picture",
+      "category": "files",
+      "shape": "stack",
+      "label": "take a picture of [by] [target] as [file]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#shop"
+        },
+        {
+          "name": "file",
+          "kind": "text",
+          "default": "shop"
+        }
+      ],
+      "description": "A picture of just one part of the page",
+      "notes": "Also shows the picture in the diary. Uses output()."
+    },
+    {
+      "type": "full_page_picture",
+      "category": "files",
+      "shape": "stack",
+      "label": "take a full-page picture as [file]",
+      "fields": [
+        {
+          "name": "file",
+          "kind": "text",
+          "default": "whole-page"
+        }
+      ],
+      "description": "A picture of the whole page, top to bottom",
+      "notes": "Chrome/Edge: CDP Page.captureScreenshot with captureBeyondViewport; Firefox: get_full_page_screenshot_as_png. Uses output()."
+    },
+    {
+      "type": "save_pdf",
+      "category": "files",
+      "shape": "stack",
+      "label": "save the page as PDF [file]",
+      "fields": [
+        {
+          "name": "file",
+          "kind": "text",
+          "default": "page"
+        }
+      ],
+      "description": "Prints the page into a PDF file",
+      "notes": "driver.print_page(); only works headless (friendly error otherwise). Uses output()."
+    },
+    {
+      "type": "save_html",
+      "category": "files",
+      "shape": "stack",
+      "label": "save the page code (HTML) as [file]",
+      "fields": [
+        {
+          "name": "file",
+          "kind": "text",
+          "default": "page"
+        }
+      ],
+      "description": "Saves the page's HTML source"
+    },
+    {
+      "type": "output_folder",
+      "category": "files",
+      "shape": "stack",
+      "label": "save files in folder [path]",
+      "fields": [
+        {
+          "name": "path",
+          "kind": "text",
+          "default": "C:\\Users\\me\\Documents\\robot"
+        }
+      ],
+      "description": "On your own computer: where files go. On the website, files download instead",
+      "notes": "Local only: sets the output folder. Server: no-op message."
+    },
+    {
+      "type": "accept_alert",
+      "category": "popups",
+      "shape": "stack",
+      "label": "click OK on the popup ✔",
+      "fields": [],
+      "description": "Says yes to an alert / confirm box"
+    },
+    {
+      "type": "dismiss_alert",
+      "category": "popups",
+      "shape": "stack",
+      "label": "click Cancel on the popup ✖",
+      "fields": [],
+      "description": "Says no to a confirm box"
+    },
+    {
+      "type": "type_alert",
+      "category": "popups",
+      "shape": "stack",
+      "label": "type [text] into the popup and click OK",
+      "fields": [
+        {
+          "name": "text",
+          "kind": "text",
+          "default": "Robo"
+        }
+      ],
+      "description": "Answers a prompt box"
+    },
+    {
+      "type": "check_alert",
+      "category": "popups",
+      "shape": "stack",
+      "label": "check the popup says [text]",
+      "fields": [
+        {
+          "name": "text",
+          "kind": "text",
+          "default": "Hello"
+        }
+      ],
+      "description": "Reads the popup without closing it"
+    },
+    {
+      "type": "switch_frame",
+      "category": "popups",
+      "shape": "stack",
+      "label": "go inside frame [by] [target]",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#mini-frame"
+        }
+      ],
+      "description": "Steps into a page-inside-a-page (iframe)"
+    },
+    {
+      "type": "switch_main",
+      "category": "popups",
+      "shape": "stack",
+      "label": "go back to the main page",
+      "fields": [],
+      "description": "Steps out of all frames"
+    },
+    {
+      "type": "repeat",
+      "category": "control",
+      "shape": "c",
+      "label": "repeat [times] times",
+      "fields": [
+        {
+          "name": "times",
+          "kind": "number",
+          "default": "3"
+        }
+      ],
+      "description": "Does the blocks inside again and again"
+    },
+    {
+      "type": "if_exists",
+      "category": "control",
+      "shape": "c",
+      "label": "if [by] [target] is on screen",
+      "fields": [
+        {
+          "name": "by",
+          "kind": "select",
+          "default": "css",
+          "options": [
+            {
+              "label": "css",
+              "value": "css"
+            },
+            {
+              "label": "xpath",
+              "value": "xpath"
+            },
+            {
+              "label": "id",
+              "value": "id"
+            },
+            {
+              "label": "name",
+              "value": "name"
+            },
+            {
+              "label": "link text",
+              "value": "link"
+            },
+            {
+              "label": "part of link",
+              "value": "partial"
+            },
+            {
+              "label": "class",
+              "value": "class"
+            },
+            {
+              "label": "tag",
+              "value": "tag"
+            }
+          ]
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "default": "#secret"
+        }
+      ],
+      "description": "Only does the inside blocks if it can see the element"
+    },
+    {
+      "type": "if_compare",
+      "category": "control",
+      "shape": "c",
+      "label": "if [a] [op] [b]",
+      "fields": [
+        {
+          "name": "a",
+          "kind": "text",
+          "default": "1"
+        },
+        {
+          "name": "op",
+          "kind": "select",
+          "default": "=",
+          "options": [
+            {
+              "label": "=",
+              "value": "="
+            },
+            {
+              "label": "≠",
+              "value": "!="
+            },
+            {
+              "label": ">",
+              "value": ">"
+            },
+            {
+              "label": "<",
+              "value": "<"
+            },
+            {
+              "label": "contains",
+              "value": "contains"
+            }
+          ]
+        },
+        {
+          "name": "b",
+          "kind": "text",
+          "default": "1"
+        }
+      ],
+      "description": "Only does the inside blocks if this is true. Drop variables into the boxes",
+      "notes": "Compares as numbers when both sides are numbers, otherwise as text; '>'/'<' on non-numbers is a friendly error."
+    },
+    {
+      "type": "repeat_until",
+      "category": "control",
+      "shape": "c",
+      "label": "repeat until [a] [op] [b]",
+      "fields": [
+        {
+          "name": "a",
+          "kind": "text",
+          "default": "1"
+        },
+        {
+          "name": "op",
+          "kind": "select",
+          "default": "=",
+          "options": [
+            {
+              "label": "=",
+              "value": "="
+            },
+            {
+              "label": "≠",
+              "value": "!="
+            },
+            {
+              "label": ">",
+              "value": ">"
+            },
+            {
+              "label": "<",
+              "value": "<"
+            },
+            {
+              "label": "contains",
+              "value": "contains"
+            }
+          ]
+        },
+        {
+          "name": "b",
+          "kind": "text",
+          "default": "5"
+        }
+      ],
+      "description": "Keeps going until this becomes true",
+      "notes": "Re-reads its raw (unfilled) fields each round so variables changed inside the loop count; stops with an error after 1000 rounds."
+    },
+    {
+      "type": "for_each",
+      "category": "control",
+      "shape": "c",
+      "label": "for each item in [name]",
+      "fields": [
+        {
+          "name": "name",
+          "kind": "var",
+          "default": "prices"
+        }
+      ],
+      "description": "Once per item: use the item and number variables. Tables also give one variable per column",
+      "notes": "Sets variables item and number each round; for a table, also one variable per column (column name sanitized to \\w+)."
+    },
+    {
+      "type": "say",
+      "category": "control",
+      "shape": "stack",
+      "label": "say 💬 [message]",
+      "fields": [
+        {
+          "name": "message",
+          "kind": "text",
+          "default": "I did it!"
+        }
+      ],
+      "description": "Writes a message in the diary. Drop a variable in to say its value"
+    }
+  ],
+  "runner_semantics": {
+    "execution": "Scripts starting with 'start' run in order on a background thread, sharing one browser. For each block: check stop/time limit, emit step 'running', fill {variables} into string fields, call the block function, emit 'pass' with its sentence (or 'fail' with a friendly reason; parents of a failed child are marked 'fail' too), send a live frame, then pause for the speed delay. Browser always quits at the end unless 'keep browser open' (local Chrome/Edge use detach).",
+    "auto_browser": "Any block needing a browser opens Chrome automatically if no 'open browser' block ran (logs a message).",
+    "element_finding": "WebDriverWait (default 10 s; server mode caps any wait at 60 s) for presence/visibility/clickability depending on the block; the found element flashes a pink outline in the page for 450 ms. Missing element: \"I couldn't find \\\"#x\\\" on the page (I waited 10s).\"",
+    "friendly_errors": "Timeouts, click intercepted, not interactable, stale element, invalid selector and WebDriver errors are translated to short kid-friendly sentences.",
+    "url_helper": "Missing scheme: localhost/127.0.0.1/192.168./10. get http://, everything else https://.",
+    "variables": "run.vars dict. remember(name, value, card) stores and emits {event:'var'}; scrape and load-file blocks also emit a {event:'scraped'} diary card. as_text formats lists 'a, b, c', tables row-wise, whole floats without .0. Numbers can be read out of text ('$12.99' -> 12.99).",
+    "outputs": "output(filename, bytes|text, mime): server mode -> {event:'download'} with base64 data; local -> write to out_dir (default scraped/, change with 'save files in folder') and emit {event:'file', name, url (if in scraped/), path}. File names get a -HHMMSS stamp.",
+    "excel": "openpyxl; first row bold; number-looking text written as numbers; 'save ALL' makes a 'Variables' sheet (name/value) plus one sheet per list/table. CSV files start with a UTF-8 BOM so Excel shows emoji.",
+    "live_frames": "When the browser is headless (always in server mode): after every step and, throttled to every 0.5 s, during pauses and while waiting for elements, send {event:'frame', src: JPEG data URL (CDP Page.captureScreenshot quality 55), url, title}. Read url/title first; if an alert is open that raises and the frame is skipped.",
+    "popups": "unhandled_prompt_behavior='ignore' on every browser so frames/commands never auto-close an alert before a popup block handles it.",
+    "stop": "Stop flag checked before each block, in pauses and on every wait poll."
+  },
+  "websocket_protocol": {
+    "GET /ws/ping": "Accepts (if Origin allowed) and sends {event:'pong', server: bool}, then closes.",
+    "GET /ws/run": {
+      "origin_check": "Origin header must match BLOCKBOTS_ORIGINS, else close code 1008. No Origin (non-browser clients) is allowed.",
+      "client_to_server": [
+        {
+          "action": "run",
+          "scripts": "[[block, ...], ...] (only stacks starting with start)",
+          "delay": "seconds between steps (server caps at 2)",
+          "keepOpen": "bool"
+        },
+        {
+          "action": "stop"
+        },
+        {
+          "action": "answer",
+          "text": "reply to an ask event (max 2000 chars)"
+        }
+      ],
+      "server_to_client": [
+        {
+          "event": "log",
+          "text": "info line"
+        },
+        {
+          "event": "step",
+          "id": "block id",
+          "status": "running | pass | fail | stopped",
+          "text": "sentence (pass) or reason (fail)"
+        },
+        {
+          "event": "var",
+          "name": "variable",
+          "kind": "text | list | table",
+          "value": "value (table = {columns, rows})"
+        },
+        {
+          "event": "scraped",
+          "name": "...",
+          "kind": "...",
+          "value": "... (diary card)"
+        },
+        {
+          "event": "frame",
+          "src": "data:image/jpeg;base64,...",
+          "url": "current URL",
+          "title": "page title"
+        },
+        {
+          "event": "screenshot",
+          "name": "...",
+          "file": "suggested file name",
+          "src": "data URL (server) | omitted",
+          "url": "/shots/<file> (local) | omitted"
+        },
+        {
+          "event": "file",
+          "name": "...",
+          "url": "/scraped/<file> or null",
+          "path": "absolute path on the runner computer"
+        },
+        {
+          "event": "download",
+          "name": "file name",
+          "mime": "type",
+          "data": "base64 (browser saves it immediately)"
+        },
+        {
+          "event": "ask",
+          "question": "text (editor shows a prompt and replies with action 'answer')"
+        },
+        {
+          "event": "done",
+          "ok": "bool",
+          "stopped": "bool",
+          "text": "'All N steps passed!' or the failure reason",
+          "passed": "count (Start not counted)"
+        }
+      ],
+      "concurrency": "asyncio.Semaphore(BLOCKBOTS_MAX_RUNS) in server mode; the slot is held until 'done' (browser really closed). Client disconnect stops the run."
+    }
+  },
+  "http_endpoints": {
+    "GET /": "Editor (static/index.html; static files mounted at / last so routes win)",
+    "GET /playground, /playground/frame": "Practice site; other files in static/playground are served by the static mount",
+    "GET /api/tests, GET|PUT|DELETE /api/tests/{name}": "Local mode only: saved tests in tests/<name>.json (name sanitized to [\\w\\- ], max 60)",
+    "GET /shots/*, /scraped/*": "Local mode only: screenshots and saved files"
+  },
+  "server_mode_security": [
+    "Run the container on its own Docker network shared only with the reverse proxy (cannot reach databases or other services)",
+    "Address guard for go to / new tab / downloads: only http/https; hostname resolved and every address must be ip.is_global; exception: localhost/127.0.0.1 on the runner's own port with path starting /playground",
+    "upload_file refused; nothing written to disk (outputs are downloads, screenshots are data URLs, saved-tests API disabled)",
+    "Non-root user in the image; Chromium flags --headless=new --no-sandbox --disable-dev-shm-usage --disable-gpu --window-size=1280,800",
+    "Limits: BLOCKBOTS_MAX_RUNS simultaneous runs, BLOCKBOTS_MAX_SECONDS per run ('The test ran longer than 5 minutes, so I stopped it.'), waits capped at 60 s, downloads capped at 15 MB, step delay capped at 2 s",
+    "WebSocket Origin allow-list (BLOCKBOTS_ORIGINS)"
+  ],
+  "playground": {
+    "purpose": "Practice website served by the runner at /playground. Every block's default field value targets something here, so blocks work the moment they are dropped in.",
+    "elements": {
+      "#title": "h1 '🎪 Robot Playground'; page title 'Robot Playground'",
+      "#name, #hello-btn, #greeting": "Type a name; button (or Enter) shows 'Hello, <name>! 👋'",
+      "#pet, #pizza, #pet-msg": "Select Cat/Dog/Dragon (values cat/dog/dragon) and checkbox; message updates",
+      "#count, #counter-btn, #reset-btn, #disabled-btn": "Counter; a permanently disabled button",
+      "#reveal-btn, #loading, #secret": "Shows ⏳ Loading… then '🎉 You found the secret!' after 2 s",
+      "#double-box, #right-box, #hover-box": "Change text on double-click / right-click / hover",
+      "#alert-btn, #confirm-btn, #prompt-btn, #popup-result": "alert('Hello from the playground!'), confirm('Do you like robots?'), prompt('What is your robot called?')",
+      "#star, #basket": "Drag the star into the basket with plain mouse events (not HTML5 DnD, so Selenium can do it) -> 'Caught the star! ⭐'",
+      "#signup, #email, #signup-msg": "Form submit shows 'Thanks for signing up, <email>! 📬'",
+      "#file, #file-msg": "File input shows 'Got <filename> 📎'",
+      "#mini-frame": "iframe (/playground/frame) with #frame-input, #frame-btn, #frame-msg ('Painted <colour>! 🎨')",
+      "#shop .product (.name .price a.more)": "4 toys: Rocket Kit $12.99, Robot Dog $24.50, Magic Cube $7.25, Dino Lamp $18.00",
+      "#vacancies, #jobs .job .title": "'There are 3 open jobs today!'; jobs Robot Trainer, Cookie Tester, Dragon Walker",
+      "#robot-pic, #price-list": "robot.svg image and a link to prices.csv",
+      "#scores": "Table Player/Game/Score: Ada Space Race 980, Linus Block Jump 870, Grace Bug Hunt 760"
+    }
+  },
+  "examples": [
+    {
+      "file": "playground-demo.json",
+      "name": "Playground Demo",
+      "covers": "~30 steps: open, go to, title check, type, click, text checks, dropdown, checkbox, repeat x3 clicks + count check, wait for secret, double-click, drag & drop, alert check/accept, iframe type/click/check, scroll, row count, screenshot, say"
+    },
+    {
+      "file": "scraping-demo.json",
+      "name": "Scraping Demo",
+      "covers": "grab page title, count products, grab first/all names and prices, for-each say, check contains, grab all hrefs, table, every link, type a scraped value, save CSV and JSON"
+    },
+    {
+      "file": "variables-files-demo.json",
+      "name": "Variables & Files Demo",
+      "covers": "number_of_vacancies scraped and said, if > 2, for-each job titles, maths/join/date/set/change/repeat, list clear/add, load an embedded people.csv and for-each row type {Name} + check greeting, then Excel/CSV/image/linked file/element picture/full-page picture/PDF/HTML/save-all outputs"
+    }
+  ],
+  "deployment": {
+    "Dockerfile": [
+      "FROM python:3.12-slim",
+      "apt-get install --no-install-recommends chromium chromium-driver fonts-dejavu-core fonts-noto-color-emoji",
+      "pip install -r requirements.txt; COPY . .",
+      "useradd bot; chown /app; USER bot",
+      "ENV BLOCKBOTS_SERVER=1 CHROME_BIN=/usr/bin/chromium CHROMEDRIVER=/usr/bin/chromedriver PYTHONUNBUFFERED=1",
+      "CMD python server.py --host 0.0.0.0 --port 8000"
+    ],
+    "standalone_docker_compose": {
+      "services": {
+        "blockly_runner": {
+          "build": ".",
+          "restart": "unless-stopped",
+          "ports": [
+            "8000:8000"
+          ],
+          "environment": [
+            "BLOCKBOTS_MAX_RUNS=2",
+            "BLOCKBOTS_MAX_SECONDS=300",
+            "BLOCKBOTS_ORIGINS=https://your-domain\\.com"
+          ],
+          "mem_limit": "1500m",
+          "shm_size": "256m"
+        }
+      },
+      "note": "Standalone, the runner serves the editor itself at / and detects server mode via /ws/ping. Put it behind HTTPS (e.g. nginx/Caddy) and set BLOCKBOTS_ORIGINS to your site."
+    },
+    "behind_an_existing_site": {
+      "editor": "Copy static/ (minus playground/) into the site's public folder (e.g. /blockly-selenium/) and embed /blockly-selenium/index.html?runner=/blockly-runner in an iframe",
+      "nginx": "location /blockly-runner/ { resolver 127.0.0.11 valid=30s ipv6=off; set $r http://blockly_runner:8000; rewrite ^/blockly-runner/(.*)$ /$1 break; proxy_pass $r; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection \"upgrade\"; proxy_set_header Host $host; proxy_read_timeout 600s; proxy_send_timeout 600s; }",
+      "caching": "Serve the copied editor files with Cache-Control: no-cache (they are not fingerprinted)",
+      "network": "Runner on its own Docker network shared only with nginx"
+    }
+  },
+  "acceptance_tests": [
+    "Every block type in static/js/blocks.js has a matching @block function in runner.py and vice versa",
+    "All three examples pass end to end against the playground in local mode and in server mode",
+    "Make a variable 'number_of_vacancies', set the scrape #vacancies block to it, drag its chip into say -> block shows 'say ⟨number_of_vacancies⟩'; Run -> diary shows '3' and the Variables box shows number_of_vacancies 3",
+    "Failing check shows red ✗, shake and a reason bubble; Stop marks the current block stopped; missing element waits then explains",
+    "Server mode: go to 127.0.0.1 / 192.168.x / 10.x / localhost:5432 / file:// are refused with friendly messages; upload_file refused; /api/tests returns 404; a third run waits when MAX_RUNS=2; long runs stop at MAX_SECONDS",
+    "Server mode outputs arrive as 'download' events (Excel/CSV/JSON/PNG/PDF/HTML); local mode writes them to scraped/",
+    "Popup blocks still work with live frames on (alert not auto-dismissed)",
+    "Live browser window updates during waits and shows the current URL; ⤢ enlarges it",
+    "Hosted editor (?runner=...) through a path-prefix reverse proxy connects to wss://<host>/<prefix>/ws/run",
+    "No console errors in the editor"
+  ]
+}

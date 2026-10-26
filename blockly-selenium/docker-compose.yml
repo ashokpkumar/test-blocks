@@ -1,0 +1,14 @@
+services:
+  blockly-selenium:
+    build: .
+    image: blockly-selenium:local
+    restart: unless-stopped
+    mem_limit: 1500m
+    shm_size: 256m
+    ports:
+      - "${BLOCKBOTS_PORT:-8000}:8000"
+    environment:
+      BLOCKBOTS_SERVER: "1"
+      BLOCKBOTS_MAX_RUNS: "${BLOCKBOTS_MAX_RUNS:-2}"
+      BLOCKBOTS_MAX_SECONDS: "${BLOCKBOTS_MAX_SECONDS:-300}"
+      BLOCKBOTS_ORIGINS: "${BLOCKBOTS_ORIGINS:-https?://(localhost|127\\.0\\.0\\.1)(:\\d+)?}"

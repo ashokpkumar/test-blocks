@@ -1,0 +1,204 @@
+{
+  "name": "Scraping Demo",
+  "scripts": [
+    {
+      "id": "scrapedemo",
+      "x": 40,
+      "y": 30,
+      "blocks": [
+        {
+          "id": "scrape1",
+          "type": "start",
+          "fields": {}
+        },
+        {
+          "id": "scrape2",
+          "type": "open_browser",
+          "fields": {
+            "browser": "chrome",
+            "mode": "visible"
+          }
+        },
+        {
+          "id": "scrape3",
+          "type": "go_to",
+          "fields": {
+            "url": "http://localhost:8000/playground"
+          }
+        },
+        {
+          "id": "scrape4",
+          "type": "scrape_page",
+          "fields": {
+            "what": "title",
+            "name": "page"
+          }
+        },
+        {
+          "id": "scrape5",
+          "type": "say",
+          "fields": {
+            "message": "I'm on {page}"
+          }
+        },
+        {
+          "id": "scrape6",
+          "type": "scroll_to",
+          "fields": {
+            "by": "css",
+            "target": "#shop"
+          }
+        },
+        {
+          "id": "scrape7",
+          "type": "scrape_count",
+          "fields": {
+            "name": "how_many",
+            "by": "css",
+            "target": ".product"
+          }
+        },
+        {
+          "id": "scrape8",
+          "type": "check_scraped",
+          "fields": {
+            "name": "how_many",
+            "mode": "is",
+            "text": "4"
+          }
+        },
+        {
+          "id": "scrape9",
+          "type": "scrape_text",
+          "fields": {
+            "name": "toy",
+            "by": "css",
+            "target": ".product .name"
+          }
+        },
+        {
+          "id": "scrape10",
+          "type": "scrape_all",
+          "fields": {
+            "name": "toys",
+            "by": "css",
+            "target": ".product .name"
+          }
+        },
+        {
+          "id": "scrape11",
+          "type": "scrape_all",
+          "fields": {
+            "name": "prices",
+            "by": "css",
+            "target": ".product .price"
+          }
+        },
+        {
+          "id": "scrape13",
+          "type": "for_each",
+          "fields": {
+            "name": "prices"
+          },
+          "children": [
+            {
+              "id": "scrape12",
+              "type": "say",
+              "fields": {
+                "message": "Toy #{number} costs {item}"
+              }
+            }
+          ]
+        },
+        {
+          "id": "scrape14",
+          "type": "check_scraped",
+          "fields": {
+            "name": "prices",
+            "mode": "contains",
+            "text": "$7.25"
+          }
+        },
+        {
+          "id": "scrape15",
+          "type": "scrape_attribute",
+          "fields": {
+            "attr": "href",
+            "which": "all",
+            "name": "links",
+            "by": "css",
+            "target": ".product a"
+          }
+        },
+        {
+          "id": "scrape16",
+          "type": "scrape_table",
+          "fields": {
+            "name": "scores",
+            "by": "css",
+            "target": "#scores"
+          }
+        },
+        {
+          "id": "scrape17",
+          "type": "scrape_links",
+          "fields": {
+            "name": "all_links"
+          }
+        },
+        {
+          "id": "scrape18",
+          "type": "type_text",
+          "fields": {
+            "text": "{toy}",
+            "by": "css",
+            "target": "#name"
+          }
+        },
+        {
+          "id": "scrape19",
+          "type": "click",
+          "fields": {
+            "by": "css",
+            "target": "#hello-btn"
+          }
+        },
+        {
+          "id": "scrape20",
+          "type": "check_text",
+          "fields": {
+            "mode": "contains",
+            "text": "Rocket Kit",
+            "by": "css",
+            "target": "#greeting"
+          }
+        },
+        {
+          "id": "scrape21",
+          "type": "save_scraped",
+          "fields": {
+            "name": "scores",
+            "file": "high-scores",
+            "format": "csv"
+          }
+        },
+        {
+          "id": "scrape22",
+          "type": "save_scraped",
+          "fields": {
+            "name": "prices",
+            "file": "toy-prices",
+            "format": "json"
+          }
+        },
+        {
+          "id": "scrape23",
+          "type": "say",
+          "fields": {
+            "message": "I scraped {how_many} toys: {toys}"
+          }
+        }
+      ]
+    }
+  ]
+}

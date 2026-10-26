@@ -1,0 +1,304 @@
+{
+  "name": "Variables & Files Demo",
+  "variables": [
+    "number_of_vacancies",
+    "job_titles",
+    "double_jobs",
+    "headline",
+    "today",
+    "counter",
+    "checked_people",
+    "people"
+  ],
+  "scripts": [
+    {
+      "id": "vfdemo",
+      "x": 40,
+      "y": 30,
+      "blocks": [
+        {
+          "id": "vf1",
+          "type": "start",
+          "fields": {}
+        },
+        {
+          "id": "vf2",
+          "type": "open_browser",
+          "fields": {
+            "browser": "chrome",
+            "mode": "hidden"
+          }
+        },
+        {
+          "id": "vf3",
+          "type": "go_to",
+          "fields": {
+            "url": "http://localhost:8000/playground"
+          }
+        },
+        {
+          "id": "vf4",
+          "type": "scrape_text",
+          "fields": {
+            "name": "number_of_vacancies",
+            "by": "css",
+            "target": "#vacancies"
+          }
+        },
+        {
+          "id": "vf5",
+          "type": "say",
+          "fields": {
+            "message": "{number_of_vacancies}"
+          }
+        },
+        {
+          "id": "vf7",
+          "type": "if_compare",
+          "fields": {
+            "a": "{number_of_vacancies}",
+            "op": ">",
+            "b": "2"
+          },
+          "children": [
+            {
+              "id": "vf6",
+              "type": "say",
+              "fields": {
+                "message": "That's lots of jobs! 🎉"
+              }
+            }
+          ]
+        },
+        {
+          "id": "vf8",
+          "type": "scrape_all",
+          "fields": {
+            "name": "job_titles",
+            "by": "css",
+            "target": ".job .title"
+          }
+        },
+        {
+          "id": "vf10",
+          "type": "for_each",
+          "fields": {
+            "name": "job_titles"
+          },
+          "children": [
+            {
+              "id": "vf9",
+              "type": "say",
+              "fields": {
+                "message": "Job {number}: {item}"
+              }
+            }
+          ]
+        },
+        {
+          "id": "vf11",
+          "type": "math_var",
+          "fields": {
+            "name": "double_jobs",
+            "a": "{number_of_vacancies}",
+            "op": "*",
+            "b": "2"
+          }
+        },
+        {
+          "id": "vf12",
+          "type": "join_var",
+          "fields": {
+            "name": "headline",
+            "a": "Jobs today: ",
+            "b": "{number_of_vacancies}"
+          }
+        },
+        {
+          "id": "vf13",
+          "type": "date_var",
+          "fields": {
+            "name": "today",
+            "what": "date"
+          }
+        },
+        {
+          "id": "vf14",
+          "type": "set_var",
+          "fields": {
+            "name": "counter",
+            "value": "0"
+          }
+        },
+        {
+          "id": "vf16",
+          "type": "repeat",
+          "fields": {
+            "times": "3"
+          },
+          "children": [
+            {
+              "id": "vf15",
+              "type": "change_var",
+              "fields": {
+                "name": "counter",
+                "by": "1"
+              }
+            }
+          ]
+        },
+        {
+          "id": "vf17",
+          "type": "list_clear",
+          "fields": {
+            "name": "checked_people"
+          }
+        },
+        {
+          "id": "vf18",
+          "type": "load_file",
+          "fields": {
+            "name": "people",
+            "file": {
+              "name": "people.csv",
+              "data": "TmFtZSxFbWFpbApBZGEsYWRhQGV4YW1wbGUuY29tCkxpbnVzLGxpbnVzQGV4YW1wbGUuY29tCkdyYWNlLGdyYWNlQGV4YW1wbGUuY29tCg=="
+            }
+          }
+        },
+        {
+          "id": "vf24",
+          "type": "for_each",
+          "fields": {
+            "name": "people"
+          },
+          "children": [
+            {
+              "id": "vf19",
+              "type": "clear_field",
+              "fields": {
+                "by": "css",
+                "target": "#name"
+              }
+            },
+            {
+              "id": "vf20",
+              "type": "type_text",
+              "fields": {
+                "text": "{Name}",
+                "by": "css",
+                "target": "#name"
+              }
+            },
+            {
+              "id": "vf21",
+              "type": "click",
+              "fields": {
+                "by": "css",
+                "target": "#hello-btn"
+              }
+            },
+            {
+              "id": "vf22",
+              "type": "check_text",
+              "fields": {
+                "mode": "contains",
+                "text": "{Name}",
+                "by": "css",
+                "target": "#greeting"
+              }
+            },
+            {
+              "id": "vf23",
+              "type": "list_add",
+              "fields": {
+                "value": "{Name}",
+                "name": "checked_people"
+              }
+            }
+          ]
+        },
+        {
+          "id": "vf25",
+          "type": "save_scraped",
+          "fields": {
+            "name": "job_titles",
+            "file": "jobs",
+            "format": "xlsx"
+          }
+        },
+        {
+          "id": "vf26",
+          "type": "save_scraped",
+          "fields": {
+            "name": "checked_people",
+            "file": "checked",
+            "format": "csv"
+          }
+        },
+        {
+          "id": "vf27",
+          "type": "download_image",
+          "fields": {
+            "file": "robot",
+            "by": "css",
+            "target": "#robot-pic"
+          }
+        },
+        {
+          "id": "vf28",
+          "type": "download_link",
+          "fields": {
+            "file": "price-list",
+            "by": "css",
+            "target": "#price-list"
+          }
+        },
+        {
+          "id": "vf29",
+          "type": "element_picture",
+          "fields": {
+            "file": "jobs-board",
+            "by": "css",
+            "target": "#jobs"
+          }
+        },
+        {
+          "id": "vf30",
+          "type": "full_page_picture",
+          "fields": {
+            "file": "whole-page"
+          }
+        },
+        {
+          "id": "vf31",
+          "type": "save_pdf",
+          "fields": {
+            "file": "playground"
+          }
+        },
+        {
+          "id": "vf32",
+          "type": "save_html",
+          "fields": {
+            "file": "playground"
+          }
+        },
+        {
+          "id": "vf33",
+          "type": "save_all",
+          "fields": {
+            "file": "all-results",
+            "format": "xlsx"
+          }
+        },
+        {
+          "id": "vf34",
+          "type": "say",
+          "fields": {
+            "message": "{headline} · checked {counter} times · {today}"
+          }
+        }
+      ]
+    }
+  ]
+}

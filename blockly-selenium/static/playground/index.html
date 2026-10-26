@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Robot Playground</title>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root { --ink: #2B2350; --line: #E4DEFA; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Fredoka', 'Segoe UI', system-ui, sans-serif; color: var(--ink); background: #FFF8EC; }
+    header { background: linear-gradient(90deg, #FF4FA3, #FF8A1F, #FFB703); color: #fff; padding: 22px 16px; text-align: center; }
+    header h1 { margin: 0; font-size: 34px; }
+    header p { margin: 4px 0 0; }
+    main { max-width: 980px; margin: 0 auto; padding: 18px 16px 60px; display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 16px; }
+    .card { background: #fff; border-radius: 18px; padding: 16px; border: 3px solid var(--line); box-shadow: 0 4px 0 var(--line); }
+    .card h2 { margin: 0 0 10px; font-size: 19px; }
+    .wide { grid-column: 1 / -1; }
+    input[type=text], input[type=email], select { font: inherit; padding: 8px 12px; border-radius: 10px; border: 2px solid var(--line); width: 100%; margin-bottom: 8px; }
+    button { font: inherit; font-weight: 600; border: 0; border-radius: 12px; padding: 9px 16px; color: #fff; background: #3A86FF; cursor: pointer; box-shadow: 0 3px 0 #2366D1; margin: 2px 4px 4px 0; }
+    button:active { transform: translateY(2px); box-shadow: none; }
+    button:disabled { background: #C9C4DD; box-shadow: none; cursor: not-allowed; }
+    .msg { min-height: 1.4em; font-weight: 600; color: #8B5CF6; margin-top: 6px; }
+    .box { height: 90px; border-radius: 14px; display: grid; place-items: center; font-weight: 600; color: #fff; user-select: none; margin-bottom: 8px; text-align: center; padding: 6px; }
+    #double-box { background: #00BFA6; }
+    #right-box { background: #8B5CF6; }
+    #hover-box { background: #FF8A1F; transition: transform .2s; }
+    #hover-box:hover { transform: scale(1.05) rotate(-2deg); background: #FF4FA3; }
+    .drag-area { position: relative; height: 160px; background: #EEF4FF; border-radius: 14px; }
+    #star { position: absolute; left: 20px; top: 50px; font-size: 48px; cursor: grab; user-select: none; touch-action: none; }
+    #basket { position: absolute; right: 16px; top: 30px; width: 120px; height: 100px; border: 3px dashed #3A86FF; border-radius: 16px; display: grid; place-items: center; font-weight: 600; text-align: center; }
+    #basket.full { background: #FFF4C2; border-style: solid; border-color: #FFB703; }
+    #secret { display: none; font-size: 22px; font-weight: 600; color: #3DBE52; }
+    #loading { display: none; color: #FF8A1F; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px; text-align: left; border-bottom: 2px solid var(--line); }
+    th { background: #F5EEFF; }
+    iframe { width: 100%; height: 150px; border: 3px dashed #8B5CF6; border-radius: 14px; }
+    label { cursor: pointer; }
+    .big { font-size: 40px; font-weight: 600; color: #FF4FA3; }
+    .big-line { font-size: 20px; }
+    #vacancies { color: #FF6B2C; font-size: 28px; }
+    .jobs { margin: 0; padding-left: 20px; line-height: 1.9; }
+    .job .title { font-weight: 600; }
+    .shop { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+    .product { background: #FFF0F4; border-radius: 14px; padding: 12px; text-align: center; }
+    .product .pic { font-size: 40px; }
+    .product .name { margin: 4px 0; font-size: 17px; }
+    .product .price { font-weight: 600; color: #D1456C; font-size: 18px; margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 id="title">🎪 Robot Playground</h1>
+    <p>A safe practice website for your Block Bots tests. Every block's example value works here!</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>👋 Say hello</h2>
+      <input id="name" type="text" name="name" placeholder="Your name">
+      <button id="hello-btn">Say hello</button>
+      <div id="greeting" class="msg"></div>
+    </section>
+
+    <section class="card">
+      <h2>🐾 Pick a pet</h2>
+      <select id="pet" name="pet">
+        <option value="">-- choose --</option>
+        <option value="cat">Cat</option>
+        <option value="dog">Dog</option>
+        <option value="dragon">Dragon</option>
+      </select>
+      <label><input id="pizza" type="checkbox"> I like pizza 🍕</label>
+      <div id="pet-msg" class="msg"></div>
+    </section>
+
+    <section class="card">
+      <h2>🔢 Counter</h2>
+      <div class="big"><span id="count">0</span></div>
+      <button id="counter-btn">Add one</button>
+      <button id="reset-btn" style="background:#FF5470;box-shadow:0 3px 0 #D63452">Reset</button>
+      <button id="disabled-btn" disabled>I'm always off</button>
+    </section>
+
+    <section class="card">
+      <h2>🕵️ Secret message</h2>
+      <p>Press the button and wait 2 seconds...</p>
+      <button id="reveal-btn">Reveal the secret</button>
+      <div id="loading">⏳ Loading...</div>
+      <div id="secret">🎉 You found the secret!</div>
+    </section>
+
+    <section class="card">
+      <h2>🖱️ Mouse tricks</h2>
+      <div id="double-box" class="box">Double-click me</div>
+      <div id="right-box" class="box">Right-click me</div>
+      <div id="hover-box" class="box">Hover over me</div>
+    </section>
+
+    <section class="card">
+      <h2>💬 Popups</h2>
+      <button id="alert-btn">Alert</button>
+      <button id="confirm-btn">Confirm</button>
+      <button id="prompt-btn">Prompt</button>
+      <div id="popup-result" class="msg"></div>
+    </section>
+
+    <section class="card wide">
+      <h2>⭐ Drag the star into the basket</h2>
+      <div class="drag-area">
+        <div id="star">⭐</div>
+        <div id="basket">🧺 Basket</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>📝 Sign up</h2>
+      <form id="signup">
+        <input id="email" type="email" name="email" placeholder="you@example.com">
+        <button type="submit">Sign up</button>
+      </form>
+      <div id="signup-msg" class="msg"></div>
+    </section>
+
+    <section class="card">
+      <h2>📎 Upload</h2>
+      <input id="file" type="file">
+      <div id="file-msg" class="msg"></div>
+    </section>
+
+    <section class="card">
+      <h2>🪟 Frame</h2>
+      <iframe id="mini-frame" src="/playground/frame" title="mini page"></iframe>
+    </section>
+
+    <section class="card wide">
+      <h2>🛒 Toy shop <small style="font-weight:400;color:#7A72A0">(great for scraping!)</small></h2>
+      <div id="shop" class="shop">
+        <article class="product"><div class="pic">🚀</div><h3 class="name">Rocket Kit</h3><div class="price">$12.99</div><a class="more" href="#rocket-kit">See more</a></article>
+        <article class="product"><div class="pic">🐶</div><h3 class="name">Robot Dog</h3><div class="price">$24.50</div><a class="more" href="#robot-dog">See more</a></article>
+        <article class="product"><div class="pic">🧊</div><h3 class="name">Magic Cube</h3><div class="price">$7.25</div><a class="more" href="#magic-cube">See more</a></article>
+        <article class="product"><div class="pic">🦕</div><h3 class="name">Dino Lamp</h3><div class="price">$18.00</div><a class="more" href="#dino-lamp">See more</a></article>
+      </div>
+      <p id="shop-note">4 toys in stock · prices include a free sticker ✨</p>
+    </section>
+
+    <section class="card wide">
+      <h2>💼 Jobs board</h2>
+      <p class="big-line">There are <b id="vacancies">3</b> open jobs today!</p>
+      <ul id="jobs" class="jobs">
+        <li class="job"><span class="title">Robot Trainer</span> · <span class="place">Moon Base</span></li>
+        <li class="job"><span class="title">Cookie Tester</span> · <span class="place">Candy Town</span></li>
+        <li class="job"><span class="title">Dragon Walker</span> · <span class="place">Castle Hill</span></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>🖼️ Pictures &amp; files</h2>
+      <img id="robot-pic" src="/playground/robot.svg" alt="A friendly robot" width="120" height="120">
+      <p><a id="price-list" class="download" href="/playground/prices.csv">⬇ Toy price list (CSV)</a></p>
+    </section>
+
+    <section class="card wide">
+      <h2>🏆 High scores</h2>
+      <table id="scores">
+        <thead><tr><th>Player</th><th>Game</th><th>Score</th></tr></thead>
+        <tbody>
+          <tr><td>Ada</td><td>Space Race</td><td>980</td></tr>
+          <tr><td>Linus</td><td>Block Jump</td><td>870</td></tr>
+          <tr><td>Grace</td><td>Bug Hunt</td><td>760</td></tr>
+        </tbody>
+      </table>
+      <p><a href="#title">Back to top ⬆️</a></p>
+    </section>
+  </main>
+
+  <script>
+    const $ = s => document.querySelector(s);
+
+    const greet = () => {
+      const n = $('#name').value.trim();
+      $('#greeting').textContent = n ? `Hello, ${n}! 👋` : 'Please type your name first.';
+    };
+    $('#hello-btn').onclick = greet;
+    $('#name').addEventListener('keydown', e => { if (e.key === 'Enter') greet(); });
+
+    const petMsg = () => {
+      const pet = $('#pet').selectedOptions[0];
+      const parts = [];
+      if (pet.value) parts.push(`You picked a ${pet.textContent}!`);
+      if ($('#pizza').checked) parts.push('Pizza party 🍕');
+      $('#pet-msg').textContent = parts.join(' ');
+    };
+    $('#pet').onchange = petMsg;
+    $('#pizza').onchange = petMsg;
+
+    let count = 0;
+    $('#counter-btn').onclick = () => { $('#count').textContent = ++count; };
+    $('#reset-btn').onclick = () => { $('#count').textContent = count = 0; };
+
+    $('#reveal-btn').onclick = () => {
+      $('#secret').style.display = 'none';
+      $('#loading').style.display = 'block';
+      setTimeout(() => {
+        $('#loading').style.display = 'none';
+        $('#secret').style.display = 'block';
+      }, 2000);
+    };
+
+    $('#double-box').ondblclick = e => { e.target.textContent = 'Double-clicked! ✌️'; };
+    $('#right-box').oncontextmenu = e => { e.preventDefault(); e.target.textContent = 'Right-clicked! 👉'; };
+    $('#hover-box').onmouseenter = e => { e.target.textContent = 'You found me! 👀'; };
+
+    $('#alert-btn').onclick = () => { alert('Hello from the playground!'); $('#popup-result').textContent = 'Alert closed ✔'; };
+    $('#confirm-btn').onclick = () => { $('#popup-result').textContent = confirm('Do you like robots?') ? 'You said OK 👍' : 'You said Cancel 👎'; };
+    $('#prompt-btn').onclick = () => {
+      const name = prompt('What is your robot called?');
+      $('#popup-result').textContent = name ? `Your robot is called ${name} 🤖` : 'No name given';
+    };
+
+    // Plain mouse events (not HTML5 drag & drop) so Selenium can drag the star too.
+    const star = $('#star'), basket = $('#basket'), area = star.parentElement;
+    star.addEventListener('mousedown', down => {
+      down.preventDefault();
+      const a = area.getBoundingClientRect(), s = star.getBoundingClientRect();
+      const ox = down.clientX - s.left, oy = down.clientY - s.top;
+      const move = e => {
+        star.style.left = e.clientX - a.left - ox + 'px';
+        star.style.top = e.clientY - a.top - oy + 'px';
+      };
+      const up = e => {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        const b = basket.getBoundingClientRect();
+        if (e.clientX > b.left && e.clientX < b.right && e.clientY > b.top && e.clientY < b.bottom) {
+          basket.classList.add('full');
+          basket.textContent = 'Caught the star! ⭐';
+          star.style.display = 'none';
+        }
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    });
+
+    $('#signup').onsubmit = e => {
+      e.preventDefault();
+      $('#signup-msg').textContent = `Thanks for signing up, ${$('#email').value || 'friend'}! 📬`;
+    };
+    $('#file').onchange = e => { $('#file-msg').textContent = e.target.files[0] ? `Got ${e.target.files[0].name} 📎` : ''; };
+  </script>
+</body>
+</html>

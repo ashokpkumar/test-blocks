@@ -1,0 +1,20 @@
+[
+  {
+    "file": "playground-demo.json",
+    "name": "Playground Demo",
+    "icon": "🎪",
+    "about": "Clicks, typing, dropdowns, popups, frames and drag & drop"
+  },
+  {
+    "file": "scraping-demo.json",
+    "name": "Scraping Demo",
+    "icon": "🕸️",
+    "about": "Grabs toy names, prices, links and a table, then saves them to files"
+  },
+  {
+    "file": "variables-files-demo.json",
+    "name": "Variables & Files Demo",
+    "icon": "📦",
+    "about": "Variables, maths, if, a data-driven test from a CSV, and Excel/CSV/PDF/picture outputs"
+  }
+]

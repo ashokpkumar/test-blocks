@@ -1,0 +1,248 @@
+{
+  "name": "Playground Demo",
+  "scripts": [
+    {
+      "id": "demo",
+      "x": 40,
+      "y": 30,
+      "blocks": [
+        {
+          "id": "demo1",
+          "type": "start",
+          "fields": {}
+        },
+        {
+          "id": "demo2",
+          "type": "open_browser",
+          "fields": {
+            "browser": "chrome",
+            "mode": "visible"
+          }
+        },
+        {
+          "id": "demo3",
+          "type": "go_to",
+          "fields": {
+            "url": "http://localhost:8000/playground"
+          }
+        },
+        {
+          "id": "demo4",
+          "type": "check_title",
+          "fields": {
+            "mode": "contains",
+            "text": "Playground"
+          }
+        },
+        {
+          "id": "demo5",
+          "type": "type_text",
+          "fields": {
+            "text": "Ada",
+            "by": "css",
+            "target": "#name"
+          }
+        },
+        {
+          "id": "demo6",
+          "type": "click",
+          "fields": {
+            "by": "css",
+            "target": "#hello-btn"
+          }
+        },
+        {
+          "id": "demo7",
+          "type": "check_text",
+          "fields": {
+            "mode": "contains",
+            "text": "Ada",
+            "by": "css",
+            "target": "#greeting"
+          }
+        },
+        {
+          "id": "demo8",
+          "type": "select_text",
+          "fields": {
+            "option": "Dragon",
+            "by": "css",
+            "target": "#pet"
+          }
+        },
+        {
+          "id": "demo9",
+          "type": "set_checkbox",
+          "fields": {
+            "state": "on",
+            "by": "css",
+            "target": "#pizza"
+          }
+        },
+        {
+          "id": "demo11",
+          "type": "repeat",
+          "fields": {
+            "times": "3"
+          },
+          "children": [
+            {
+              "id": "demo10",
+              "type": "click",
+              "fields": {
+                "by": "css",
+                "target": "#counter-btn"
+              }
+            }
+          ]
+        },
+        {
+          "id": "demo12",
+          "type": "check_text",
+          "fields": {
+            "mode": "is",
+            "text": "3",
+            "by": "css",
+            "target": "#count"
+          }
+        },
+        {
+          "id": "demo13",
+          "type": "click",
+          "fields": {
+            "by": "css",
+            "target": "#reveal-btn"
+          }
+        },
+        {
+          "id": "demo14",
+          "type": "wait_visible",
+          "fields": {
+            "seconds": "5",
+            "by": "css",
+            "target": "#secret"
+          }
+        },
+        {
+          "id": "demo15",
+          "type": "double_click",
+          "fields": {
+            "by": "css",
+            "target": "#double-box"
+          }
+        },
+        {
+          "id": "demo16",
+          "type": "drag_drop",
+          "fields": {
+            "by": "css",
+            "target": "#star",
+            "to_by": "css",
+            "to_target": "#basket"
+          }
+        },
+        {
+          "id": "demo17",
+          "type": "check_text",
+          "fields": {
+            "mode": "contains",
+            "text": "Caught",
+            "by": "css",
+            "target": "#basket"
+          }
+        },
+        {
+          "id": "demo18",
+          "type": "click",
+          "fields": {
+            "by": "css",
+            "target": "#alert-btn"
+          }
+        },
+        {
+          "id": "demo19",
+          "type": "check_alert",
+          "fields": {
+            "text": "Hello"
+          }
+        },
+        {
+          "id": "demo20",
+          "type": "accept_alert",
+          "fields": {}
+        },
+        {
+          "id": "demo21",
+          "type": "switch_frame",
+          "fields": {
+            "by": "css",
+            "target": "#mini-frame"
+          }
+        },
+        {
+          "id": "demo22",
+          "type": "type_text",
+          "fields": {
+            "text": "orange",
+            "by": "css",
+            "target": "#frame-input"
+          }
+        },
+        {
+          "id": "demo23",
+          "type": "click",
+          "fields": {
+            "by": "css",
+            "target": "#frame-btn"
+          }
+        },
+        {
+          "id": "demo24",
+          "type": "check_text",
+          "fields": {
+            "mode": "contains",
+            "text": "Painted",
+            "by": "css",
+            "target": "#frame-msg"
+          }
+        },
+        {
+          "id": "demo25",
+          "type": "switch_main",
+          "fields": {}
+        },
+        {
+          "id": "demo26",
+          "type": "scroll_to",
+          "fields": {
+            "by": "css",
+            "target": "#scores"
+          }
+        },
+        {
+          "id": "demo27",
+          "type": "check_count",
+          "fields": {
+            "count": "3",
+            "by": "css",
+            "target": "#scores tbody tr"
+          }
+        },
+        {
+          "id": "demo28",
+          "type": "screenshot",
+          "fields": {
+            "name": "playground"
+          }
+        },
+        {
+          "id": "demo29",
+          "type": "say",
+          "fields": {
+            "message": "I tested the whole playground! 🎉"
+          }
+        }
+      ]
+    }
+  ]
+}

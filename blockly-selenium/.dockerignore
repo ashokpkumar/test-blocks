@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+screenshots/
+scraped/
+tests/
+publish_to_site.py
+Dockerfile

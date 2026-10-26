@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Block Bots</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🤖</span>
+      <span class="title">Block<b>Bots</b></span>
+    </div>
+    <input id="name" class="test-name" value="My Test" maxlength="60" spellcheck="false" aria-label="Test name">
+    <div class="tools">
+      <button id="new" class="tool" title="Start a new test">✨ <span>New</span></button>
+      <button id="examples" class="tool" title="Ready-made example tests">🧪 <span>Examples</span></button>
+      <button id="open" class="tool" title="Open a saved test">📂 <span>Open</span></button>
+      <button id="save" class="tool" title="Save (Ctrl+S)">💾 <span>Save</span></button>
+      <button id="export" class="tool icon" title="Download as a file">📤</button>
+      <button id="import" class="tool icon" title="Load from a file">📥</button>
+      <input id="import-file" type="file" accept=".json,application/json" hidden>
+      <button id="undo" class="tool icon" title="Undo (Ctrl+Z)">↶</button>
+    </div>
+    <div class="run-tools">
+      <label class="speed" title="How fast the robot works">
+        <span id="speed-icon">🐇</span>
+        <input id="speed" type="range" min="0" max="4" step="1">
+      </label>
+      <label class="toggle" title="Leave the browser open after the test so you can look around">
+        <input id="keep-open" type="checkbox"><span class="knob"></span><span class="lbl">keep browser open</span>
+      </label>
+      <button id="mute" class="tool icon" title="Sound on/off">🔊</button>
+      <button id="runner" class="runner-chip" hidden title="The test robot on the server isn't answering. Click to check again.">🔴 robot offline</button>
+      <button id="stop" class="stop" title="Stop (Esc)">■ Stop</button>
+      <button id="run" class="run" title="Run (Ctrl+Enter)"><span class="play">▶</span> Run</button>
+    </div>
+  </header>
+
+  <main class="app">
+    <nav id="rail" class="rail" aria-label="Block categories"></nav>
+
+    <aside class="palette">
+      <input id="search" class="search" placeholder="🔎 Find a block..." spellcheck="false">
+      <div id="flyout" class="flyout"></div>
+    </aside>
+
+    <section class="canvas-wrap">
+      <div id="canvas" class="canvas">
+        <div id="sizer" class="sizer"><div id="world" class="world"></div></div>
+      </div>
+      <div class="canvas-tools">
+        <button id="cleanup" title="Tidy up">🧹</button>
+        <button id="zoom-out" title="Zoom out">−</button>
+        <button id="zoom-reset" title="Normal size">⦿</button>
+        <button id="zoom-in" title="Zoom in">+</button>
+      </div>
+      <div id="trash" class="trash" title="Drop blocks here to delete them">🗑️</div>
+    </section>
+
+    <aside class="side">
+      <div class="robot-card">
+        <svg id="robot" class="robot" viewBox="0 0 120 120" data-mood="idle" aria-hidden="true">
+          <line x1="60" y1="16" x2="60" y2="32" stroke="#5B6B8C" stroke-width="4" stroke-linecap="round"/>
+          <circle class="antenna" cx="60" cy="13" r="7"/>
+          <rect x="11" y="52" width="12" height="22" rx="6" fill="#FF8FAB"/>
+          <rect x="97" y="52" width="12" height="22" rx="6" fill="#FF8FAB"/>
+          <rect x="20" y="30" width="80" height="62" rx="20" fill="#8FD3FF" stroke="#3A86FF" stroke-width="4"/>
+          <rect x="31" y="42" width="58" height="38" rx="13" fill="#1F2A44"/>
+          <g class="eyes">
+            <circle cx="47" cy="57" r="6.5" fill="#7CFFCB"/>
+            <circle cx="73" cy="57" r="6.5" fill="#7CFFCB"/>
+          </g>
+          <path class="mouth" d="M48 68 Q60 76 72 68" stroke="#7CFFCB" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+          <rect x="40" y="92" width="40" height="16" rx="7" fill="#3A86FF"/>
+          <circle cx="52" cy="100" r="3" fill="#FFB703"/>
+          <circle cx="60" cy="100" r="3" fill="#FF4FA3"/>
+          <circle cx="68" cy="100" r="3" fill="#3DBE52"/>
+        </svg>
+        <div id="bubble" class="bubble">Hi!</div>
+      </div>
+      <figure id="live" class="live" hidden>
+        <div class="win-bar">
+          <span class="win-dots"><i></i><i></i><i></i></span>
+          <span id="live-url" class="win-url">🤖 Robot's browser</span>
+          <button id="live-zoom" class="win-zoom" title="Make it bigger">⤢</button>
+        </div>
+        <div class="win-body">
+          <img id="live-img" alt="What the robot's browser shows right now" hidden>
+          <div id="live-empty" class="win-empty">Press <b>▶ Run</b> and watch the robot's Chrome browser right here 👀</div>
+        </div>
+      </figure>
+      <section id="watch" class="watch" hidden>
+        <h3>📦 Variables</h3>
+        <div id="watch-list" class="watch-list"></div>
+      </section>
+      <div class="diary-head">
+        <h2>📒 Test diary</h2>
+        <button id="clear-log" title="Clear">🧽</button>
+      </div>
+      <ol id="log" class="log"></ol>
+    </aside>
+  </main>
+
+  <div id="menu" class="menu" hidden></div>
+
+  <dialog id="dialog" class="dialog">
+    <h2 id="dialog-title">📂 Open a test</h2>
+    <ul id="test-list" class="test-list"></ul>
+    <button id="close-dialog" class="tool">Close</button>
+  </dialog>
+
+  <div id="toast" class="toast"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

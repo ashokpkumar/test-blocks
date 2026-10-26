@@ -1,0 +1,4 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+selenium>=4.20
+openpyxl>=3.1
